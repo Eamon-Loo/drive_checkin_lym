@@ -183,12 +183,12 @@ const main = async () => {
       const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
       result.forEach((r) => logger.log(r));
 
-      logger.log(
-        `${firstSpace}实际：个人容量+ ${(cloudCapacityInfo.totalSize - cloudCapacityInfo0.totalSize) / 1024 / 1024}M, 家庭容量+ ${(familyCapacityInfo.totalSize - familyCapacityInfo0.totalSize) / 1024 / 1024}M`
-      );
-      logger.log(
-        `${firstSpace}个人总容量：${(cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2)}G, 家庭总容量：${(familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2)}G`
-      );
+      //logger.log(
+       // `${firstSpace}实际：个人+ ${(cloudCapacityInfo.totalSize - cloudCapacityInfo0.totalSize) / 1024 / 1024}M, 家庭+ ${(familyCapacityInfo.totalSize - familyCapacityInfo0.totalSize) / 1024 / 1024}M`
+     // );
+     // logger.log(
+       // `${firstSpace}个人总：${(cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2)}G, 家庭总：${(familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2)}G`
+     // );
     } catch (e) {
       logger.error(e);
       if (e.code === "ETIMEDOUT") throw e;
@@ -205,7 +205,13 @@ const main = async () => {
       const { familyCapacityInfo: finalfamilyCapacityInfo } = await cloudClient.getUserSizeInfo();
     
       const capacityChange = finalfamilyCapacityInfo.totalSize - familyCapacitySize;
-      logger.log(`主账号${userNameInfo} 家庭容量+ ${capacityChange / 1024 / 1024}M \n\n`);
+      logger.log(`本次签到主号${userNameInfo} 家庭+ ${capacityChange / 1024 / 1024}M \n`);
+       //输出主账号的个人空间和家庭空间
+       const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
+       const personalTotalCapacity = (cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);  // 个人容量，单位 GB
+       const familyTotalCapacity = (familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);    // 家庭容量，单位 GB
+       logger.log(`${firstSpace}主账号个人总容量：${personalTotalCapacity} GB`);
+       logger.log(`${firstSpace}主账号家庭总容量：${familyTotalCapacity} GB`);
     }
   }
 
@@ -222,7 +228,7 @@ const main = async () => {
     logger.log("\n\n");
     const events = recording.replay();
     const content = events.map((e) => `${e.data.join("")}`).join("  \n");
-    push("天翼云盘自动签到任务", content);
+    push("lym天翼签到", content);
     recording.erase();
   }
 })();
