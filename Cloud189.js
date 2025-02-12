@@ -23,12 +23,16 @@ const logger = log4js.getLogger();
 
 const mask = (s, start, end) => s.split("").fill("*", start, end).join("");
 
-const doTask = async (cloudClient) => {
+const doTask = async (cloudClient, i) => {
   const result = [];
-  
+
+  // 根据账号是否为第一个账户设置线程数
+  const privateThreadCount = (env.private_only_first && i === 0) ? 1 : 0;  // 第一个账户执行单线程个人空间签到
+  const familyThreadCount = (env.private_only_first && i === 0) ? 1 : env.family_threadx;  // 第一个账户执行单线程家庭空间签到，其他账户并行执行
+
   // 个人空间签到部分：仅在第一个账号且 private_only_first 为 true 时执行单线程
   let getSpace = [`${firstSpace}签到个人云获得(M)`];
-  if (privateThreadCount > 0) {  // 只有第一个账号会执行
+  if (privateThreadCount > 0) {  // 只有第一个账户会执行
     const signPromises1 = [];
     for (let m = 0; m < privateThreadCount; m++) {
       signPromises1.push((async () => {
@@ -176,7 +180,7 @@ const main = async () => {
       logger.log(`${i / 2 + 1}.账户 ${userNameInfo} 开始执行`);
       await cloudClient.login();
       const { cloudCapacityInfo: cloudCapacityInfo0, familyCapacityInfo: familyCapacityInfo0 } = await cloudClient.getUserSizeInfo();
-      const result = await doTask(cloudClient);
+      const result = await doTask(cloudClient, i);
       
       if (i / 2 % 20 == 0) {
         userName0 = userName;
