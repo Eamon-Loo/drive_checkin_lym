@@ -28,24 +28,25 @@ const doTask = async (cloudClient) => {
   const signPromises1 = [];
   let getSpace = [`${firstSpace}签到个人云获得(M)`];
   
-  // 处理个人签到
-  if (env.private_only_first == false || i / 2 % 20 == 0) {
-    for (let m = 0; m < private_threadx; m++) {
-      signPromises1.push((async () => {
-        try {
-          const res1 = await cloudClient.userSign();
-          if (!res1.isSign) {
-            getSpace.push(` ${res1.netdiskBonus}`);
-          }
-        } catch (e) {
-          getSpace.push(` 0`);
+  // 如果 private_only_first 为 true 且是第一个账户，执行单线程个人签到
+  const privateThreadCount = (env.private_only_first && i === 0) ? 1 : private_threadx;
+
+  for (let m = 0; m < privateThreadCount; m++) {
+    signPromises1.push((async () => {
+      try {
+        const res1 = await cloudClient.userSign();
+        if (!res1.isSign) {
+          getSpace.push(` ${res1.netdiskBonus}`);
         }
-      })());
-    }
-    await Promise.all(signPromises1);
-    if (getSpace.length == 1) getSpace.push(" 0");
-    result.push(getSpace.join(" "));
+      } catch (e) {
+        getSpace.push(` 0`);
+      }
+    })());
   }
+
+  await Promise.all(signPromises1);
+  if (getSpace.length == 1) getSpace.push(" 0");
+  result.push(getSpace.join(" "));
 
   const signPromises2 = [];
   getSpace = [`${firstSpace}签到家庭云获得(M)`];
@@ -55,7 +56,7 @@ const doTask = async (cloudClient) => {
     const family = familyInfoResp.find((f) => f.familyId == familyID) || familyInfoResp[0];
     result.push(`${firstSpace}开始签到家庭云 ID: ${family.familyId}`);
     
-    // 如果是第一个账户且 private_only_first 为 true，执行单线程
+    // 如果是第一个账户且 private_only_first 为 true，执行单线程家庭签到
     const threadCount = (env.private_only_first && i === 0) ? 1 : family_threadx;
     
     for (let m = 0; m < threadCount; m++) {
