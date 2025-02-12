@@ -25,41 +25,41 @@ const mask = (s, start, end) => s.split("").fill("*", start, end).join("");
 
 const doTask = async (cloudClient) => {
   const result = [];
-  const signPromises1 = [];
-  let getSpace = [`${firstSpace}签到个人云获得(M)`];
   
-  // 如果 private_only_first 为 true 且是第一个账户，执行单线程个人签到
-  const privateThreadCount = (env.private_only_first && i === 0) ? 1 : private_threadx;
-
-  for (let m = 0; m < privateThreadCount; m++) {
-    signPromises1.push((async () => {
-      try {
-        const res1 = await cloudClient.userSign();
-        if (!res1.isSign) {
-          getSpace.push(` ${res1.netdiskBonus}`);
+  // 个人空间签到部分：仅在第一个账号且 private_only_first 为 true 时执行单线程
+  let getSpace = [`${firstSpace}签到个人云获得(M)`];
+  if (privateThreadCount > 0) {  // 只有第一个账号会执行
+    const signPromises1 = [];
+    for (let m = 0; m < privateThreadCount; m++) {
+      signPromises1.push((async () => {
+        try {
+          const res1 = await cloudClient.userSign();
+          if (!res1.isSign) {
+            getSpace.push(` ${res1.netdiskBonus}`);
+          }
+        } catch (e) {
+          getSpace.push(` 0`);
         }
-      } catch (e) {
-        getSpace.push(` 0`);
-      }
-    })());
+      })());
+    }
+    await Promise.all(signPromises1);
+    if (getSpace.length == 1) getSpace.push(" 0");
+    result.push(getSpace.join(" "));
+  } else {
+    getSpace.push(" 0");  // 其他账号不签个人空间
+    result.push(getSpace.join(" "));
   }
 
-  await Promise.all(signPromises1);
-  if (getSpace.length == 1) getSpace.push(" 0");
-  result.push(getSpace.join(" "));
-
+  // 家庭空间签到部分：第一个账号单线程，其他账号并行
   const signPromises2 = [];
   getSpace = [`${firstSpace}签到家庭云获得(M)`];
   const { familyInfoResp } = await cloudClient.getFamilyList();
-  
+
   if (familyInfoResp) {
     const family = familyInfoResp.find((f) => f.familyId == familyID) || familyInfoResp[0];
     result.push(`${firstSpace}开始签到家庭云 ID: ${family.familyId}`);
-    
-    // 如果是第一个账户且 private_only_first 为 true，执行单线程家庭签到
-    const threadCount = (env.private_only_first && i === 0) ? 1 : family_threadx;
-    
-    for (let m = 0; m < threadCount; m++) {
+
+    for (let m = 0; m < familyThreadCount; m++) {
       signPromises2.push((async () => {
         try {
           const res = await cloudClient.familyUserSign(family.familyId);
