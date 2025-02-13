@@ -112,7 +112,7 @@ const doTask = async (cloudClient) => {
 const loginWithRetry = async (cloudClient) => {
   try {
     await retryRequest(() => cloudClient.login(), 5, 30000); // 使用 5 次重试，每次间隔 30 秒
-    logger.info("登录成功");
+    //logger.info("登录成功");
   } catch (e) {
     logger.error(`登录失败：${e.message}`);
     throw e; // 登录失败就跳过当前账号
@@ -169,7 +169,7 @@ const pushWxPusher = (title, desp) => {
   superagent
     .post("https://wxpusher.zjiecode.com/api/send/message")
     .send(data)
-    .timeout(3000)
+    .timeout(30000)
     .end((err, res) => {
       if (err) {
         logger.error(`wxPusher推送失败:${JSON.stringify(err)}`);
