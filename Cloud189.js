@@ -89,14 +89,14 @@ const doTask = async (cloudClient) => {
     } else {
       // 对于其他账户或 private_only_first 为 false，使用多线程执行
       for (let m = 0; m < family_threadx; m++) {
-        signPromises2.push((async () => {
-          try {
-            const res = await cloudClient.familyUserSign(family.familyId);
-            if (!res.signStatus) {
-              getSpace.push(` ${res.bonusSpace}`);
-            }
-          } catch (e) {
-            getSpace.push(` 0`);
+      signPromises2.push((async () => {
+        try {
+          const res = await cloudClient.familyUserSign(family.familyId);
+          if (!res.signStatus) {
+            getSpace.push(` ${res.bonusSpace}`);
+          }
+        } catch (e) {
+          getSpace.push(` 0`);
           }
         })());
       }
@@ -127,23 +127,6 @@ const doTaskWithRetry = async (cloudClient) => {
     logger.error(`执行任务失败：${e.message}`);
     return []; // 返回空结果，跳过当前账号
   }
-};
-
-// 统一记录容量的函数
-const logCapacityChange = (cloudCapacityInfo0, familyCapacityInfo0, cloudCapacityInfo, familyCapacityInfo, userNameInfo) => {
-  const capacityChange = familyCapacityInfo.totalSize - familyCapacityInfo0.totalSize;
-  const personalCapacityChange = cloudCapacityInfo.totalSize - cloudCapacityInfo0.totalSize;
-
-  logger.log(`签到前主号个人容量：${(cloudCapacityInfo0.totalSize / 1024 / 1024 / 1024).toFixed(2)} GB`);
-  logger.log(`签到前主号家庭容量：${(familyCapacityInfo0.totalSize / 1024 / 1024 / 1024).toFixed(2)} GB \n`);
-  logger.log(`本次签到主号${userNameInfo} 个人+ ${personalCapacityChange / 1024 / 1024}M`);
-  logger.log(`本次签到主号${userNameInfo} 家庭+ ${capacityChange / 1024 / 1024}M \n`);
-
-  const personalTotalCapacity = (cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);
-  const familyTotalCapacity = (familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);
-
-  logger.log(`${firstSpace}现在主号个人总容量：${personalTotalCapacity} GB`);
-  logger.log(`${firstSpace}现在主号家庭总容量：${familyTotalCapacity} GB`);
 };
 
 const pushTelegramBot = (title, desp) => {
@@ -251,11 +234,8 @@ const main = async () => {
         familyCapacitySize = familyCapacityInfo0.totalSize;
       }
       const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
-      
       result.forEach((r) => logger.log(r));
 
-      // 记录容量变化
-      logCapacityChange(cloudCapacityInfo0, familyCapacityInfo0, cloudCapacityInfo, familyCapacityInfo, userNameInfo);
     } catch (e) {
       logger.error(`账户 ${userNameInfo} 执行失败：${e.message}`);
     } finally {
@@ -268,9 +248,15 @@ const main = async () => {
       await cloudClient.login();
       const userNameInfo = mask(userName0, 3, 7);
       const { familyCapacityInfo: finalfamilyCapacityInfo } = await cloudClient.getUserSizeInfo();
-      const { cloudCapacityInfo: cloudCapacityInfo0 } = await cloudClient.getUserSizeInfo(); // 获取最终的个人容量信息
-      // 记录容量变化
-      logCapacityChange(cloudCapacityInfo0, finalfamilyCapacityInfo, cloudCapacityInfo, familyCapacityInfo, userNameInfo);
+    
+      const capacityChange = finalfamilyCapacityInfo.totalSize - familyCapacitySize;
+       logger.log(`签到前主号家庭容量：${(familyCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB \n`);  
+      logger.log(`本次签到主号${userNameInfo} 家庭+ ${capacityChange / 1024 / 1024}M \n`);
+      const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
+      const personalTotalCapacity = (cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);  
+      const familyTotalCapacity = (familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);    
+      logger.log(`${firstSpace}现主号个人总容量：${personalTotalCapacity} GB`);
+      logger.log(`${firstSpace}现主号家庭总容量：${familyTotalCapacity} GB`);
     }
   }
 };
