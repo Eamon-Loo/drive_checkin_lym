@@ -1,3 +1,5 @@
+
+
 require("dotenv").config();
 const log4js = require("log4js");
 const recording = require("log4js/lib/appenders/recording");
@@ -23,19 +25,13 @@ const logger = log4js.getLogger();
 
 const mask = (s, start, end) => s.split("").fill("*", start, end).join("");
 
-const doTask = async (cloudClient, i) => {
+const doTask = async (cloudClient) => {
   const result = [];
-
-  // 根据账号是否为第一个账户设置线程数
- // const privateThreadCount = (env.private_only_first && i === 0) ? 1 : 0;  // 第一个账户执行单线程个人空间签到
-  const privateThreadCount = env.private_only_first ? 0 : 1;
-  const familyThreadCount = (env.private_only_first && i === 0) ? 1 : env.family_threadx;  // 第一个账户执行单线程家庭空间签到，其他账户并行执行
-
-  // 个人空间签到部分：仅在第一个账号且 private_only_first 为 true 时执行单线程
+  const signPromises1 = [];
   let getSpace = [`${firstSpace}签到个人云获得(M)`];
-  if (privateThreadCount > 0) {  // 只有第一个账户会执行
-    const signPromises1 = [];
-    for (let m = 0; m < privateThreadCount; m++) {
+  
+  if (env.private_only_first == false || i / 2 % 20 == 0) {
+    for (let m = 0; m < private_threadx; m++) {
       signPromises1.push((async () => {
         try {
           const res1 = await cloudClient.userSign();
@@ -49,22 +45,16 @@ const doTask = async (cloudClient, i) => {
     }
     await Promise.all(signPromises1);
     if (getSpace.length == 1) getSpace.push(" 0");
-    result.push(getSpace.join(" "));
-  } else {
-    getSpace.push(" 0");  // 其他账号不签个人空间
-    result.push(getSpace.join(" "));
+    result.push(getSpace.join(""));
   }
 
-  // 家庭空间签到部分：第一个账号单线程，其他账号并行
   const signPromises2 = [];
   getSpace = [`${firstSpace}签到家庭云获得(M)`];
   const { familyInfoResp } = await cloudClient.getFamilyList();
-
   if (familyInfoResp) {
     const family = familyInfoResp.find((f) => f.familyId == familyID) || familyInfoResp[0];
     result.push(`${firstSpace}开始签到家庭云 ID: ${family.familyId}`);
-
-    for (let m = 0; m < familyThreadCount; m++) {
+    for (let m = 0; m < family_threadx; m++) {
       signPromises2.push((async () => {
         try {
           const res = await cloudClient.familyUserSign(family.familyId);
@@ -79,11 +69,11 @@ const doTask = async (cloudClient, i) => {
 
     await Promise.all(signPromises2);
     if (getSpace.length == 1) getSpace.push(" 0");
-    result.push(getSpace.join(" "));
+    result.push(getSpace.join(""));
   }
-
   return result;
 };
+
 
 const pushTelegramBot = (title, desp) => {
   if (!(telegramBotToken && telegramBotId)) {
@@ -141,21 +131,21 @@ const pushWxPusher = (title, desp) => {
 };
 
 const push = (title, desp) => {
-  pushWxPusher(title, desp);
-  pushTelegramBot(title, desp);
-};
+  pushWxPusher(title, desp)
+  pushTelegramBot(title, desp)
+}
 
 let firstSpace = "  ";
 let familyID;
 
-let accounts = env.tyys;
+let accounts = env.tyys
 let familyIDs = env.FAMILY_ID.split(/[\n ]/);
 
-let WX_PUSHER_UID = env.WX_PUSHER_UID;
-let WX_PUSHER_APP_TOKEN = env.WX_PUSHER_APP_TOKEN;
+let WX_PUSHER_UID = env.WX_PUSHER_UID
+let WX_PUSHER_APP_TOKEN = env.WX_PUSHER_APP_TOKEN
 
-let telegramBotToken = env.TELEGRAM_BOT_TOKEN;
-let telegramBotId = env.TELEGRAM_CHAT_ID;
+let telegramBotToken = env.TELEGRAM_BOT_TOKEN
+let telegramBotId = env.TELEGRAM_CHAT_ID
 
 let private_threadx = env.private_threadx; //进程数
 let family_threadx = env.family_threadx; //进程数
@@ -175,50 +165,39 @@ const main = async () => {
 
     const userNameInfo = mask(userName, 3, 7);
 
-    let retryCount = 3;  // 设置最大重试次数
-    let success = false;
+    //const tasks = [];
+    //tasks.push((async () => {
+    try {
+      const cloudClient = new CloudClient(userName, password);
 
-    while (retryCount > 0 && !success) {
-      try {
-        const cloudClient = new CloudClient(userName, password);
-
-        logger.log(`${i / 2 + 1}.账户 ${userNameInfo} 开始执行`);
-        await cloudClient.login();
-        const { cloudCapacityInfo: cloudCapacityInfo0, familyCapacityInfo: familyCapacityInfo0 } = await cloudClient.getUserSizeInfo();
-        const result = await doTask(cloudClient, i);
-
-        if (i / 2 % 20 == 0) {
-          userName0 = userName;
-          password0 = password;
-          familyCapacitySize = familyCapacityInfo0.totalSize;
-        }
-        const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
-        result.forEach((r) => logger.log(r));
-
-        success = true; // 成功执行，跳出重试循环
-      } catch (e) {
-        logger.error(`错误发生在账号 ${userNameInfo} 执行中: ${e.message}`);
-        
-        if (e.code === "ETIMEDOUT") {
-          // 如果是超时错误，重试当前账号
-          logger.error(`账户 ${userNameInfo} 请求超时，重试中...`);
-          retryCount--;
-          if (retryCount > 0) {
-            logger.log(`剩余重试次数：${retryCount}`);
-          } else {
-            logger.error(`账户 ${userNameInfo} 已达到最大重试次数，跳过此账户`);
-          }
-        } else {
-          // 其他错误，抛出
-          throw e;
-        }
-      } finally {
-        logger.log("");
+      logger.log(`${i / 2 + 1}.账户 ${userNameInfo} 开始执行`);
+      await cloudClient.login();
+      const { cloudCapacityInfo: cloudCapacityInfo0, familyCapacityInfo: familyCapacityInfo0 } = await cloudClient.getUserSizeInfo();
+      const result = await doTask(cloudClient, env.FAMILY_ID);
+      
+      if (i / 2 % 20 == 0) {
+        userName0 = userName;
+        password0 = password;
+        familyCapacitySize = familyCapacityInfo0.totalSize;
       }
-    }
+      const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
+      result.forEach((r) => logger.log(r));
 
-    // 处理主账号的家庭空间更新
-    if (i / 2 % 20 == 19 || i + 2 == accounts.length) {
+      //logger.log(
+       // `${firstSpace}实际：个人+ ${(cloudCapacityInfo.totalSize - cloudCapacityInfo0.totalSize) / 1024 / 1024}M, 家庭+ ${(familyCapacityInfo.totalSize - familyCapacityInfo0.totalSize) / 1024 / 1024}M`
+     // );
+     // logger.log(
+       // `${firstSpace}个人总：${(cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2)}G, 家庭总：${(familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2)}G`
+     // );
+    } catch (e) {
+      logger.error(e);
+      if (e.code === "ETIMEDOUT") throw e;
+    } finally {
+      logger.log("");
+    }
+    //})());
+
+    if(i / 2 % 20 == 19 || i + 2 == accounts.length){
       if (!userName0 || !password0) continue;
       const cloudClient = new CloudClient(userName0, password0);
       await cloudClient.login();
@@ -227,14 +206,19 @@ const main = async () => {
     
       const capacityChange = finalfamilyCapacityInfo.totalSize - familyCapacitySize;
       logger.log(`本次签到主号${userNameInfo} 家庭+ ${capacityChange / 1024 / 1024}M \n`);
-      
-      const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
-      const personalTotalCapacity = (cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);  // 个人容量，单位 GB
-      const familyTotalCapacity = (familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);    // 家庭容量，单位 GB
-      logger.log(`${firstSpace}主账号个人总容量：${personalTotalCapacity} GB`);
-      logger.log(`${firstSpace}主账号家庭总容量：${familyTotalCapacity} GB`);
+       //输出主账号的个人空间和家庭空间
+       const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
+       const personalTotalCapacity = (cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);  // 个人容量，单位 GB
+       const familyTotalCapacity = (familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);    // 家庭容量，单位 GB
+       logger.log(`${firstSpace}主账号个人总容量：${personalTotalCapacity} GB`);
+       logger.log(`${firstSpace}主账号家庭总容量：${familyTotalCapacity} GB`);
     }
   }
+
+  //await Promise.all(tasks);
+
+
+
 };
 
 (async () => {
