@@ -1,5 +1,3 @@
-
-
 require("dotenv").config();
 const log4js = require("log4js");
 const recording = require("log4js/lib/appenders/recording");
@@ -25,6 +23,25 @@ const logger = log4js.getLogger();
 
 const mask = (s, start, end) => s.split("").fill("*", start, end).join("");
 
+// 重试请求的函数
+const retryRequest = async (fn, retries = 5, delay = 30000) => {  // 最大重试次数为 5 次，间隔时间为 30 秒
+  let attempt = 0;
+  while (attempt < retries) {
+    try {
+      return await fn(); // 尝试执行传入的函数
+    } catch (error) {
+      attempt++;
+      if (attempt < retries) {
+        logger.warn(`请求失败，正在重试... 第 ${attempt} 次，等待 ${delay / 1000} 秒`);
+        await new Promise((resolve) => setTimeout(resolve, delay)); // 延迟后重试
+      } else {
+        logger.error(`请求重试 ${retries} 次后仍失败`);
+        throw error; // 如果重试次数用完，抛出错误
+      }
+    }
+  }
+};
+
 const doTask = async (cloudClient) => {
   const result = [];
   const signPromises1 = [];
@@ -34,7 +51,7 @@ const doTask = async (cloudClient) => {
     for (let m = 0; m < private_threadx; m++) {
       signPromises1.push((async () => {
         try {
-          const res1 = await cloudClient.userSign();
+          const res1 = await retryRequest(() => cloudClient.userSign()); // 使用重试机制
           if (!res1.isSign) {
             getSpace.push(` ${res1.netdiskBonus}`);
           }
@@ -57,7 +74,7 @@ const doTask = async (cloudClient) => {
     for (let m = 0; m < family_threadx; m++) {
       signPromises2.push((async () => {
         try {
-          const res = await cloudClient.familyUserSign(family.familyId);
+          const res = await retryRequest(() => cloudClient.familyUserSign(family.familyId)); // 使用重试机制
           if (!res.signStatus) {
             getSpace.push(` ${res.bonusSpace}`);
           }
@@ -74,6 +91,26 @@ const doTask = async (cloudClient) => {
   return result;
 };
 
+// 登录时使用重试机制
+const loginWithRetry = async (cloudClient) => {
+  try {
+    await retryRequest(() => cloudClient.login(), 5, 30000); // 使用 5 次重试，每次间隔 30 秒
+    logger.info("登录成功");
+  } catch (e) {
+    logger.error(`登录失败：${e.message}`);
+    throw e; // 登录失败就跳过当前账号
+  }
+};
+
+// 执行任务时使用重试机制
+const doTaskWithRetry = async (cloudClient) => {
+  try {
+    return await retryRequest(() => doTask(cloudClient), 5, 30000); // 使用 5 次重试，每次间隔 30 秒
+  } catch (e) {
+    logger.error(`执行任务失败：${e.message}`);
+    return []; // 返回空结果，跳过当前账号
+  }
+};
 
 const pushTelegramBot = (title, desp) => {
   if (!(telegramBotToken && telegramBotId)) {
@@ -131,21 +168,21 @@ const pushWxPusher = (title, desp) => {
 };
 
 const push = (title, desp) => {
-  pushWxPusher(title, desp)
-  pushTelegramBot(title, desp)
-}
+  pushWxPusher(title, desp);
+  pushTelegramBot(title, desp);
+};
 
 let firstSpace = "  ";
 let familyID;
 
-let accounts = env.tyys
+let accounts = env.tyys;
 let familyIDs = env.FAMILY_ID.split(/[\n ]/);
 
-let WX_PUSHER_UID = env.WX_PUSHER_UID
-let WX_PUSHER_APP_TOKEN = env.WX_PUSHER_APP_TOKEN
+let WX_PUSHER_UID = env.WX_PUSHER_UID;
+let WX_PUSHER_APP_TOKEN = env.WX_PUSHER_APP_TOKEN;
 
-let telegramBotToken = env.TELEGRAM_BOT_TOKEN
-let telegramBotId = env.TELEGRAM_CHAT_ID
+let telegramBotToken = env.TELEGRAM_BOT_TOKEN;
+let telegramBotId = env.TELEGRAM_CHAT_ID;
 
 let private_threadx = env.private_threadx; //进程数
 let family_threadx = env.family_threadx; //进程数
@@ -165,16 +202,15 @@ const main = async () => {
 
     const userNameInfo = mask(userName, 3, 7);
 
-    //const tasks = [];
-    //tasks.push((async () => {
     try {
       const cloudClient = new CloudClient(userName, password);
 
       logger.log(`${i / 2 + 1}.账户 ${userNameInfo} 开始执行`);
-      await cloudClient.login();
+      await loginWithRetry(cloudClient);  // 使用重试机制登录
+
       const { cloudCapacityInfo: cloudCapacityInfo0, familyCapacityInfo: familyCapacityInfo0 } = await cloudClient.getUserSizeInfo();
-      const result = await doTask(cloudClient, env.FAMILY_ID);
-      
+      const result = await doTaskWithRetry(cloudClient);  // 使用重试机制执行任务
+
       if (i / 2 % 20 == 0) {
         userName0 = userName;
         password0 = password;
@@ -183,21 +219,13 @@ const main = async () => {
       const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
       result.forEach((r) => logger.log(r));
 
-      //logger.log(
-       // `${firstSpace}实际：个人+ ${(cloudCapacityInfo.totalSize - cloudCapacityInfo0.totalSize) / 1024 / 1024}M, 家庭+ ${(familyCapacityInfo.totalSize - familyCapacityInfo0.totalSize) / 1024 / 1024}M`
-     // );
-     // logger.log(
-       // `${firstSpace}个人总：${(cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2)}G, 家庭总：${(familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2)}G`
-     // );
     } catch (e) {
-      logger.error(e);
-      if (e.code === "ETIMEDOUT") throw e;
+      logger.error(`账户 ${userNameInfo} 执行失败：${e.message}`);
     } finally {
-      logger.log("");
+      logger.log("");  // 确保每个账户执行结束后打印空行
     }
-    //})());
 
-    if(i / 2 % 20 == 19 || i + 2 == accounts.length){
+    if (i / 2 % 20 == 19 || i + 2 == accounts.length) {
       if (!userName0 || !password0) continue;
       const cloudClient = new CloudClient(userName0, password0);
       await cloudClient.login();
@@ -206,19 +234,13 @@ const main = async () => {
     
       const capacityChange = finalfamilyCapacityInfo.totalSize - familyCapacitySize;
       logger.log(`本次签到主号${userNameInfo} 家庭+ ${capacityChange / 1024 / 1024}M \n`);
-       //输出主账号的个人空间和家庭空间
-       const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
-       const personalTotalCapacity = (cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);  // 个人容量，单位 GB
-       const familyTotalCapacity = (familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);    // 家庭容量，单位 GB
-       logger.log(`${firstSpace}主账号个人总容量：${personalTotalCapacity} GB`);
-       logger.log(`${firstSpace}主账号家庭总容量：${familyTotalCapacity} GB`);
+      const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
+      const personalTotalCapacity = (cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);  
+      const familyTotalCapacity = (familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);    
+      logger.log(`${firstSpace}主账号个人总容量：${personalTotalCapacity} GB`);
+      logger.log(`${firstSpace}主账号家庭总容量：${familyTotalCapacity} GB`);
     }
   }
-
-  //await Promise.all(tasks);
-
-
-
 };
 
 (async () => {
