@@ -248,12 +248,12 @@ const main = async () => {
       await cloudClient.login();
       const userNameInfo = mask(userName0, 3, 7);
       const { familyCapacityInfo: finalfamilyCapacityInfo } = await cloudClient.getUserSizeInfo();
-      const { cloudCapacityInfo: cloudCapacityInfo0 } = await cloudClient.getUserSizeInfo();
+      //const { cloudCapacityInfo: cloudCapacityInfo0 } = await cloudClient.getUserSizeInfo();
       const capacityChange = finalfamilyCapacityInfo.totalSize - familyCapacitySize;
-      const personalCapacityChange = cloudCapacityInfo.totalSize - cloudCapacityInfo0.totalSize;
-      logger.log(`签到前主号个人容量：${(cloudCapacityInfo0.totalSize / 1024 / 1024 / 1024).toFixed(2)} GB`);
+      //const personalCapacityChange = cloudCapacityInfo.totalSize - cloudCapacityInfo0.totalSize;
+     // logger.log(`签到前主号个人容量：${(cloudCapacityInfo0.totalSize / 1024 / 1024 / 1024).toFixed(2)} GB`);
       logger.log(`签到前主号家庭容量：${(familyCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB \n`);     
-      logger.log(`本次签到主号${userNameInfo} 个人+ ${personalCapacityChange / 1024 / 1024}M`);
+     // logger.log(`本次签到主号${userNameInfo} 个人+ ${personalCapacityChange / 1024 / 1024}M`);
       logger.log(`本次签到主号${userNameInfo} 家庭+ ${capacityChange / 1024 / 1024}M \n`);
       const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
       const personalTotalCapacity = (cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);  
