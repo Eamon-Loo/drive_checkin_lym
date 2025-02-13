@@ -248,7 +248,7 @@ const main = async () => {
       await cloudClient.login();
       const userNameInfo = mask(userName0, 3, 7);
       const { familyCapacityInfo: finalfamilyCapacityInfo } = await cloudClient.getUserSizeInfo();
-    
+      const { cloudCapacityInfo: cloudCapacityInfo0 } = await cloudClient.getUserSizeInfo();
       const capacityChange = finalfamilyCapacityInfo.totalSize - familyCapacitySize;
       const personalCapacityChange = cloudCapacityInfo.totalSize - cloudCapacityInfo0.totalSize;
       logger.log(`签到前主号个人容量：${(cloudCapacityInfo0.totalSize / 1024 / 1024 / 1024).toFixed(2)} GB`);
