@@ -89,14 +89,14 @@ const doTask = async (cloudClient) => {
     } else {
       // 对于其他账户或 private_only_first 为 false，使用多线程执行
       for (let m = 0; m < family_threadx; m++) {
-        signPromises2.push((async () => {
-          try {
-            const res = await retryRequest(() => cloudClient.familyUserSign(family.familyId)); // 使用重试机制
-            if (!res.signStatus) {
-              getSpace.push(` ${res.bonusSpace}`);
-            }
-          } catch (e) {
-            getSpace.push(` 0`);
+      signPromises2.push((async () => {
+        try {
+          const res = await cloudClient.familyUserSign(family.familyId);
+          if (!res.signStatus) {
+            getSpace.push(` ${res.bonusSpace}`);
+          }
+        } catch (e) {
+          getSpace.push(` 0`);
           }
         })());
       }
