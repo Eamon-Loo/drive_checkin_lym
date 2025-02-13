@@ -174,30 +174,50 @@ const main = async () => {
 
     const userNameInfo = mask(userName, 3, 7);
 
-    try {
-      const cloudClient = new CloudClient(userName, password);
+    let retryCount = 3;  // 设置最大重试次数
+    let success = false;
 
-      logger.log(`${i / 2 + 1}.账户 ${userNameInfo} 开始执行`);
-      await cloudClient.login();
-      const { cloudCapacityInfo: cloudCapacityInfo0, familyCapacityInfo: familyCapacityInfo0 } = await cloudClient.getUserSizeInfo();
-      const result = await doTask(cloudClient, i);
-      
-      if (i / 2 % 20 == 0) {
-        userName0 = userName;
-        password0 = password;
-        familyCapacitySize = familyCapacityInfo0.totalSize;
+    while (retryCount > 0 && !success) {
+      try {
+        const cloudClient = new CloudClient(userName, password);
+
+        logger.log(`${i / 2 + 1}.账户 ${userNameInfo} 开始执行`);
+        await cloudClient.login();
+        const { cloudCapacityInfo: cloudCapacityInfo0, familyCapacityInfo: familyCapacityInfo0 } = await cloudClient.getUserSizeInfo();
+        const result = await doTask(cloudClient, i);
+
+        if (i / 2 % 20 == 0) {
+          userName0 = userName;
+          password0 = password;
+          familyCapacitySize = familyCapacityInfo0.totalSize;
+        }
+        const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
+        result.forEach((r) => logger.log(r));
+
+        success = true; // 成功执行，跳出重试循环
+      } catch (e) {
+        logger.error(`错误发生在账号 ${userNameInfo} 执行中: ${e.message}`);
+        
+        if (e.code === "ETIMEDOUT") {
+          // 如果是超时错误，重试当前账号
+          logger.error(`账户 ${userNameInfo} 请求超时，重试中...`);
+          retryCount--;
+          if (retryCount > 0) {
+            logger.log(`剩余重试次数：${retryCount}`);
+          } else {
+            logger.error(`账户 ${userNameInfo} 已达到最大重试次数，跳过此账户`);
+          }
+        } else {
+          // 其他错误，抛出
+          throw e;
+        }
+      } finally {
+        logger.log("");
       }
-      const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
-      result.forEach((r) => logger.log(r));
-
-    } catch (e) {
-      logger.error(e);
-      if (e.code === "ETIMEDOUT") throw e;
-    } finally {
-      logger.log("");
     }
 
-    if(i / 2 % 20 == 19 || i + 2 == accounts.length){
+    // 处理主账号的家庭空间更新
+    if (i / 2 % 20 == 19 || i + 2 == accounts.length) {
       if (!userName0 || !password0) continue;
       const cloudClient = new CloudClient(userName0, password0);
       await cloudClient.login();
