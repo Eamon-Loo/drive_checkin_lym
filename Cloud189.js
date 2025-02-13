@@ -27,7 +27,8 @@ const doTask = async (cloudClient, i) => {
   const result = [];
 
   // 根据账号是否为第一个账户设置线程数
-  const privateThreadCount = (env.private_only_first && i === 0) ? 1 : 0;  // 第一个账户执行单线程个人空间签到
+ // const privateThreadCount = (env.private_only_first && i === 0) ? 1 : 0;  // 第一个账户执行单线程个人空间签到
+  const privateThreadCount = env.private_only_first ? 0 : 1;
   const familyThreadCount = (env.private_only_first && i === 0) ? 1 : env.family_threadx;  // 第一个账户执行单线程家庭空间签到，其他账户并行执行
 
   // 个人空间签到部分：仅在第一个账号且 private_only_first 为 true 时执行单线程
