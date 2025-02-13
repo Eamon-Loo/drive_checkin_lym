@@ -250,13 +250,16 @@ const main = async () => {
       const { familyCapacityInfo: finalfamilyCapacityInfo } = await cloudClient.getUserSizeInfo();
     
       const capacityChange = finalfamilyCapacityInfo.totalSize - familyCapacitySize;
-      logger.log(`签到前主号家庭容量：${(familyCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB`);
+      const personalCapacityChange = cloudCapacityInfo.totalSize - cloudCapacityInfo0.totalSize;
+      logger.log(`签到前主号个人容量：${(cloudCapacityInfo0.totalSize / 1024 / 1024 / 1024).toFixed(2)} GB`);
+      logger.log(`签到前主号家庭容量：${(familyCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB \n`);     
+      logger.log(`本次签到主号${userNameInfo} 个人+ ${personalCapacityChange / 1024 / 1024}M`);
       logger.log(`本次签到主号${userNameInfo} 家庭+ ${capacityChange / 1024 / 1024}M \n`);
       const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
       const personalTotalCapacity = (cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);  
       const familyTotalCapacity = (familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);    
-      logger.log(`${firstSpace}主账号个人总容量：${personalTotalCapacity} GB`);
-      logger.log(`${firstSpace}主账号家庭总容量：${familyTotalCapacity} GB`);
+      logger.log(`${firstSpace}现在主号个人总容量：${personalTotalCapacity} GB`);
+      logger.log(`${firstSpace}现在主号家庭总容量：${familyTotalCapacity} GB`);
     }
   }
 };
