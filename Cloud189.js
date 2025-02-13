@@ -24,7 +24,7 @@ const logger = log4js.getLogger();
 const mask = (s, start, end) => s.split("").fill("*", start, end).join("");
 
 // 重试请求的函数
-const retryRequest = async (fn, retries = 5, delay = 30000) => {  // 最大重试次数为 5 次，间隔时间为 30 秒
+const retryRequest = async (fn, retries = 5, delay = 30000) => {
   let attempt = 0;
   while (attempt < retries) {
     try {
@@ -44,10 +44,11 @@ const retryRequest = async (fn, retries = 5, delay = 30000) => {  // 最大重�
 
 const doTask = async (cloudClient) => {
   const result = [];
-  const signPromises1 = [];
   let getSpace = [`${firstSpace}签到个人云获得(M)`];
   
+  // 第一个号的个人云签到是单线程的
   if (env.private_only_first == false || i / 2 % 20 == 0) {
+    const signPromises1 = [];
     for (let m = 0; m < private_threadx; m++) {
       signPromises1.push((async () => {
         try {
@@ -65,14 +66,17 @@ const doTask = async (cloudClient) => {
     result.push(getSpace.join(""));
   }
 
+  // 第一个号的家庭云签到是单线程的
   const signPromises2 = [];
   getSpace = [`${firstSpace}签到家庭云获得(M)`];
   const { familyInfoResp } = await cloudClient.getFamilyList();
   if (familyInfoResp) {
     const family = familyInfoResp.find((f) => f.familyId == familyID) || familyInfoResp[0];
     result.push(`${firstSpace}开始签到家庭云 ID: ${family.familyId}`);
-    for (let m = 0; m < family_threadx; m++) {
-      signPromises2.push((async () => {
+    
+    // 如果是第一个号且 private_only_first 为 true，使用单线程执行
+    if (env.private_only_first && i / 2 == 0) {
+      for (let m = 0; m < 1; m++) {  // 单线程执行
         try {
           const res = await retryRequest(() => cloudClient.familyUserSign(family.familyId)); // 使用重试机制
           if (!res.signStatus) {
@@ -81,10 +85,23 @@ const doTask = async (cloudClient) => {
         } catch (e) {
           getSpace.push(` 0`);
         }
-      })());
+      }
+    } else {
+      // 对于其他账户或 private_only_first 为 false，使用多线程执行
+      for (let m = 0; m < family_threadx; m++) {
+        signPromises2.push((async () => {
+          try {
+            const res = await retryRequest(() => cloudClient.familyUserSign(family.familyId)); // 使用重试机制
+            if (!res.signStatus) {
+              getSpace.push(` ${res.bonusSpace}`);
+            }
+          } catch (e) {
+            getSpace.push(` 0`);
+          }
+        })());
+      }
+      await Promise.all(signPromises2);
     }
-
-    await Promise.all(signPromises2);
     if (getSpace.length == 1) getSpace.push(" 0");
     result.push(getSpace.join(""));
   }
