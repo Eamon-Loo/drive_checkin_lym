@@ -209,7 +209,7 @@ let i = 0;
 const main = async () => {
   accounts = accounts.split(/[\n ]/);
 
-  let userName0, password0, familyCapacitySize;
+ let userName0, password0, familyCapacitySize, cloudCapacitySize;
 
   for (i = 0; i < accounts.length; i += 2) {
     let n = parseInt(i / 2 / 20);
@@ -224,7 +224,7 @@ const main = async () => {
 
       logger.log(`${i / 2 + 1}.账户 ${userNameInfo} 开始执行`);
       await loginWithRetry(cloudClient);  // 使用重试机制登录
-
+    
       const { cloudCapacityInfo: cloudCapacityInfo0, familyCapacityInfo: familyCapacityInfo0 } = await cloudClient.getUserSizeInfo();
       const result = await doTaskWithRetry(cloudClient);  // 使用重试机制执行任务
 
@@ -232,6 +232,7 @@ const main = async () => {
         userName0 = userName;
         password0 = password;
         familyCapacitySize = familyCapacityInfo0.totalSize;
+        cloudCapacitySize = cloudCapacityInfo0.totalSize;
       }
       const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
       result.forEach((r) => logger.log(r));
@@ -247,10 +248,13 @@ const main = async () => {
       const cloudClient = new CloudClient(userName0, password0);
       await cloudClient.login();
       const userNameInfo = mask(userName0, 3, 7);
-      const { familyCapacityInfo: finalfamilyCapacityInfo } = await cloudClient.getUserSizeInfo();
-    
+      const { cloudCapacityInfo: finalCloudCapacityInfo, familyCapacityInfo: finalfamilyCapacityInfo } = await cloudClient.getUserSizeInfo();
+      
+    const cloudCapacityChange = finalCloudCapacityInfo.totalSize - cloudCapacitySize;
       const capacityChange = finalfamilyCapacityInfo.totalSize - familyCapacitySize;
+        logger.log(`签到前${userNameInfo} 个人：${(cloudCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB`); 
        logger.log(`签到前${userNameInfo} 家庭：${(familyCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB`);  
+      logger.log(`本次签到${userNameInfo} 个人获得 ${(cloudCapacityChange / 1048576).toFixed(2)}M`); // 新增
       logger.log(`本次签到${userNameInfo} 家庭获得 ${capacityChange / 1024 / 1024}M`);
       const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
       const personalTotalCapacity = (cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);  
