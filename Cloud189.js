@@ -252,7 +252,7 @@ const main = async () => {
       
     const cloudCapacityChange = finalCloudCapacityInfo.totalSize - cloudCapacitySize;
       const capacityChange = finalfamilyCapacityInfo.totalSize - familyCapacitySize;
-      logger.log(`本次签到${userNameInfo} 个人获得 ${(cloudCapacityChange / 1048576).toFixed(2)}M`); // 新增
+      logger.log(`本次签到${userNameInfo} 个人获得 ${cloudCapacityChange / 1024 / 1024}M`); // 新增
       logger.log(`本次签到${userNameInfo} 家庭获得 ${capacityChange / 1024 / 1024}M \n`);
       logger.log(`签到前${userNameInfo} 个人：${(cloudCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB`); 
        logger.log(`签到前${userNameInfo} 家庭：${(familyCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB`);  
