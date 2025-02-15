@@ -37,7 +37,7 @@ jobs:
         - name: 执行
           uses: nick-fields/retry@master
           with:
-            timeout_minutes: 30
+            timeout_minutes: 60
             max_attempts: 3
             command: npm start
               
