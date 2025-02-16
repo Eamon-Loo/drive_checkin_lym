@@ -23,8 +23,8 @@ const logger = log4js.getLogger();
 
 const mask = (s, start, end) => s.split("").fill("*", start, end).join("");
 
-// 重试请求的函数
-const retryRequest = async (fn, retries = 3, delay = 10000) => {
+// 重试请求的函数GQQ
+const retryRequest = async (fn, retries = 8, delay = 20000) => {
   let attempt = 0;
   while (attempt < retries) {
     try {
@@ -32,7 +32,7 @@ const retryRequest = async (fn, retries = 3, delay = 10000) => {
     } catch (error) {
       attempt++;
       if (attempt < retries) {
-        logger.warn(`请求失败，正在重试... 第 ${attempt} 次，等待 ${delay / 1000} 秒`);
+        logger.warn(`请求失败，正在重试...第 ${attempt} 次，等待 ${delay / 1000} 秒`);
         await new Promise((resolve) => setTimeout(resolve, delay)); // 延迟后重试
       } else {
         logger.error(`请求重试 ${retries} 次后仍失败`);
@@ -186,7 +186,7 @@ const doTask = async (cloudClient) => {
 
 const loginWithRetry = async (cloudClient) => {
   try {
-    await retryRequest(() => cloudClient.login(), 3, 10000); // 使用 3 次重试，每次间隔 10 秒
+    await retryRequest(() => cloudClient.login(), 8, 20000); // 使用 3 次重试，每次间隔 10 秒GQQ
   } catch (e) {
     logger.error(`登录失败：${e.message}`);
     process.exit(1); // 登录失败时直接结束程序
@@ -195,7 +195,7 @@ const loginWithRetry = async (cloudClient) => {
 
 const doTaskWithRetry = async (cloudClient) => {
   try {
-    return await retryRequest(() => doTask(cloudClient), 3, 10000); // 使用 3 次重试，每次间隔 10 秒
+    return await retryRequest(() => doTask(cloudClient), 8, 20000); // 使用 3 次重试，每次间隔 10 秒GQQ
   } catch (e) {
     logger.error(`执行任务失败：${e.message}`);
     process.exit(1); // 执行任务失败时直接结束程序
@@ -285,7 +285,7 @@ const main = async () => {
     logger.log("\n\n");
     const events = recording.replay();
     const content = events.map((e) => `${e.data.join("")}`).join("  \n");
-    push("5lym天翼签到", content);
+    push("eamon天翼签到", content);
     recording.erase();
   }
 })();
