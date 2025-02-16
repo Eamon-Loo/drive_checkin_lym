@@ -24,7 +24,7 @@ const logger = log4js.getLogger();
 const mask = (s, start, end) => s.split("").fill("*", start, end).join("");
 
 // 重试请求的函数
-const retryRequest = async (fn, retries = 2, delay = 10000) => {
+const retryRequest = async (fn, retries = 3, delay = 10000) => {
   let attempt = 0;
   while (attempt < retries) {
     try {
@@ -35,8 +35,8 @@ const retryRequest = async (fn, retries = 2, delay = 10000) => {
         logger.warn(`请求失败，正在重试... 第 ${attempt} 次，等待 ${delay / 1000} 秒`);
         await new Promise((resolve) => setTimeout(resolve, delay)); // 延迟后重试
       } else {
-        logger.error(`请求重试 ${retries} 次后仍失败，程序终止`);
-        throw new Error(`请求重试 ${retries} 次后仍失败，程序终止`); // 直接抛出错误，终止程序
+        logger.error(`请求重试 ${retries} 次后仍失败`);
+        throw error; // 如果重试次数用完，抛出错误
       }
     }
   }
@@ -45,7 +45,7 @@ const retryRequest = async (fn, retries = 2, delay = 10000) => {
 const doTask = async (cloudClient) => {
   const result = [];
   let getSpace = [`${firstSpace}签到个人云获得(M)`];
-
+  
   // 第一个号的个人云签到是单线程的
   if (env.private_only_first == false || i / 2 % 20 == 0) {
     const signPromises1 = [];
@@ -71,9 +71,9 @@ const doTask = async (cloudClient) => {
   getSpace = [`${firstSpace}签到家庭云获得(M)`];
   const { familyInfoResp } = await cloudClient.getFamilyList();
   if (familyInfoResp) {
-    const family = familyInfoResp.find((f) => f.familyId == familyID) || familyInfoResp;
+    const family = familyInfoResp.find((f) => f.familyId == familyID) || familyInfoResp[0];
     result.push(`${firstSpace}开始签到家庭云 ID: ${family.familyId}`);
-
+    
     // 如果是第一个号且 private_only_first 为 true，使用单线程执行
     if (env.private_only_first && i / 2 == 0) {
       for (let m = 0; m < 1; m++) {  // 单线程执行
@@ -89,14 +89,14 @@ const doTask = async (cloudClient) => {
     } else {
       // 对于其他账户或 private_only_first 为 false，使用多线程执行
       for (let m = 0; m < family_threadx; m++) {
-        signPromises2.push((async () => {
-          try {
-            const res = await cloudClient.familyUserSign(family.familyId);
-            if (!res.signStatus) {
-              getSpace.push(` ${res.bonusSpace}`);
-            }
-          } catch (e) {
-            getSpace.push(` 0`);
+      signPromises2.push((async () => {
+        try {
+          const res = await cloudClient.familyUserSign(family.familyId);
+          if (!res.signStatus) {
+            getSpace.push(` ${res.bonusSpace}`);
+          }
+        } catch (e) {
+          getSpace.push(` 0`);
           }
         })());
       }
@@ -111,20 +111,21 @@ const doTask = async (cloudClient) => {
 // 登录时使用重试机制
 const loginWithRetry = async (cloudClient) => {
   try {
-    await retryRequest(() => cloudClient.login(), 2, 10000); // 使用 2 次重试，每次间隔 10 秒
+    await retryRequest(() => cloudClient.login(), 3, 10000); // 使用 5 次重试，每次间隔 30 秒
+    //logger.info("登录成功");
   } catch (e) {
     logger.error(`登录失败：${e.message}`);
-    throw new Error(`登录失败，程序终止`); // 直接抛出错误，终止程序
+    throw e; // 登录失败就跳过当前账号
   }
 };
 
 // 执行任务时使用重试机制
 const doTaskWithRetry = async (cloudClient) => {
   try {
-    return await retryRequest(() => doTask(cloudClient), 2, 10000); // 使用 2 次重试，每次间隔 10 秒
+    return await retryRequest(() => doTask(cloudClient), 3, 10000); // 使用 5 次重试，每次间隔 30 秒
   } catch (e) {
     logger.error(`执行任务失败：${e.message}`);
-    throw new Error(`任务执行失败，程序终止`); // 直接抛出错误，终止程序
+    return []; // 返回空结果，跳过当前账号
   }
 };
 
@@ -175,7 +176,7 @@ const pushWxPusher = (title, desp) => {
         return;
       }
       const json = JSON.parse(res.text);
-      if (json.data.code !== 1000) {
+      if (json.data[0].code !== 1000) {
         logger.error(`wxPusher推送失败:${JSON.stringify(json)}`);
       } else {
         logger.info("wxPusher推送成功");
@@ -208,7 +209,7 @@ let i = 0;
 const main = async () => {
   accounts = accounts.split(/[\n ]/);
 
-  let userName0, password0, familyCapacitySize, cloudCapacitySize;
+ let userName0, password0, familyCapacitySize, cloudCapacitySize;
 
   for (i = 0; i < accounts.length; i += 2) {
     let n = parseInt(i / 2 / 20);
@@ -223,7 +224,7 @@ const main = async () => {
 
       logger.log(`${i / 2 + 1}.账户 ${userNameInfo} 开始执行`);
       await loginWithRetry(cloudClient);  // 使用重试机制登录
-
+    
       const { cloudCapacityInfo: cloudCapacityInfo0, familyCapacityInfo: familyCapacityInfo0 } = await cloudClient.getUserSizeInfo();
       const result = await doTaskWithRetry(cloudClient);  // 使用重试机制执行任务
 
@@ -238,7 +239,6 @@ const main = async () => {
 
     } catch (e) {
       logger.error(`账户 ${userNameInfo} 执行失败：${e.message}`);
-      throw e; // 抛出错误，终止程序
     } finally {
       logger.log("");  // 确保每个账户执行结束后打印空行
     }
@@ -249,16 +249,16 @@ const main = async () => {
       await cloudClient.login();
       const userNameInfo = mask(userName0, 3, 7);
       const { cloudCapacityInfo: finalCloudCapacityInfo, familyCapacityInfo: finalfamilyCapacityInfo } = await cloudClient.getUserSizeInfo();
-
-      const cloudCapacityChange = finalCloudCapacityInfo.totalSize - cloudCapacitySize;
+      
+    const cloudCapacityChange = finalCloudCapacityInfo.totalSize - cloudCapacitySize;
       const capacityChange = finalfamilyCapacityInfo.totalSize - familyCapacitySize;
       logger.log(`本次签到${userNameInfo} 个人获得 ${cloudCapacityChange / 1024 / 1024}M`); // 新增
       logger.log(`本次签到${userNameInfo} 家庭获得 ${capacityChange / 1024 / 1024}M \n`);
-      logger.log(`签到前${userNameInfo} 个人：${(cloudCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB`);
-      logger.log(`签到前${userNameInfo} 家庭：${(familyCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB`);
+      logger.log(`签到前${userNameInfo} 个人：${(cloudCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB`); 
+       logger.log(`签到前${userNameInfo} 家庭：${(familyCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB`);  
       const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
-      const personalTotalCapacity = (cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);
-      const familyTotalCapacity = (familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);
+      const personalTotalCapacity = (cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);  
+      const familyTotalCapacity = (familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);    
       logger.log(`${firstSpace}现主号${userNameInfo}个人：${personalTotalCapacity} GB`);
       logger.log(`${firstSpace}现主号${userNameInfo}家庭：${familyTotalCapacity} GB`);
     }
@@ -268,18 +268,11 @@ const main = async () => {
 (async () => {
   try {
     await main();
-  } catch (e) {
-    logger.error(`程序终止：${e.message}`);
-    const events = recording.replay();
-    const content = events.map((e) => `${e.data.join("")}`).join("  \n");
-    push("lym天翼签到失败", content);
-    recording.erase();
-    process.exit(1); // 终止程序
   } finally {
     logger.log("\n\n");
     const events = recording.replay();
     const content = events.map((e) => `${e.data.join("")}`).join("  \n");
-    push("lym天翼签到", content);
+    push("5lym天翼签到", content);
     recording.erase();
   }
 })();
