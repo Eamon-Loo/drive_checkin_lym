@@ -93,7 +93,7 @@ const doTask = async (cloudClient) => {
           try {
             const res = await cloudClient.familyUserSign(family.familyId);
             if (!res.signStatus) {
-            getSpace.push(` ${res.bonusSpace}`);
+              getSpace.push(` ${res.bonusSpace}`);
             }
           } catch (e) {
             getSpace.push(` 0`);
@@ -128,7 +128,7 @@ const doTaskWithRetry = async (cloudClient) => {
   }
 };
 
-const pushTelegramBot = async (title, desp) => {
+const pushTelegramBot = (title, desp) => {
   if (!(telegramBotToken && telegramBotId)) {
     return;
   }
@@ -136,35 +136,25 @@ const pushTelegramBot = async (title, desp) => {
     chat_id: telegramBotId,
     text: `${title}\n\n${desp}`,
   };
-
-  // 重试机制
-  let attempt = 0;
-  const maxRetries = 5;
-  const retryDelay = 10000; // 10 秒
-
-  while (attempt < maxRetries) {
-    try {
-      const res = await superagent
-        .post(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`)
-        .send(data)
-        .timeout(60000); // 超时时间设置为 60 秒
-
-      logger.info("TelegramBot推送成功");
-      return;
-    } catch (error) {
-      attempt++;
-      if (attempt < maxRetries) {
-        logger.warn(`TelegramBot推送失败，正在重试... 第 ${attempt} 次，等待 ${retryDelay / 1000} 秒`);
-        await new Promise((resolve) => setTimeout(resolve, retryDelay)); // 延迟后重试
-      } else {
-        logger.error(`TelegramBot推送重试 ${maxRetries} 次后仍失败: ${error.message}`);
-        throw error;
+  superagent
+    .post(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`)
+    .send(data)
+    .timeout(3000)
+    .end((err, res) => {
+      if (err) {
+        logger.error(`TelegramBot推送失败:${JSON.stringify(err)}`);
+        return;
       }
-    }
-  }
+      const json = JSON.parse(res.text);
+      if (!json.ok) {
+        logger.error(`TelegramBot推送失败:${JSON.stringify(json)}`);
+      } else {
+        logger.info("TelegramBot推送成功");
+      }
+    });
 };
 
-const pushWxPusher = async (title, desp) => {
+const pushWxPusher = (title, desp) => {
   if (!(WX_PUSHER_APP_TOKEN && WX_PUSHER_UID)) {
     return;
   }
@@ -175,50 +165,27 @@ const pushWxPusher = async (title, desp) => {
     content: desp,
     uids: [WX_PUSHER_UID],
   };
-
-  // 重试机制
-  let attempt = 0;
-  const maxRetries = 5;
-  const retryDelay = 10000; // 10 秒
-
-  while (attempt < maxRetries) {
-    try {
-      const res = await superagent
-        .post("https://wxpusher.zjiecode.com/api/send/message")
-        .send(data)
-        .timeout(60000); // 超时时间设置为 60 秒
-
-      const json = JSON.parse(res.text);
-      if (json.data.code !== 1000) {
-        throw new Error(`wxPusher推送失败: ${JSON.stringify(json)}`);
-      } else {
-        logger.info("wxPusher推送成功");
+  superagent
+    .post("https://wxpusher.zjiecode.com/api/send/message")
+    .send(data)
+    .timeout(30000)
+    .end((err, res) => {
+      if (err) {
+        logger.error(`wxPusher推送失败:${JSON.stringify(err)}`);
         return;
       }
-    } catch (error) {
-      attempt++;
-      if (attempt < maxRetries) {
-        logger.warn(`wxPusher推送失败，正在重试... 第 ${attempt} 次，等待 ${retryDelay / 1000} 秒`);
-        await new Promise((resolve) => setTimeout(resolve, retryDelay)); // 延迟后重试
+      const json = JSON.parse(res.text);
+      if (json.data.code !== 1000) {
+        logger.error(`wxPusher推送失败:${JSON.stringify(json)}`);
       } else {
-        logger.error(`wxPusher推送重试 ${maxRetries} 次后仍失败: ${error.message}`);
-        throw error;
+        logger.info("wxPusher推送成功");
       }
-    }
-  }
+    });
 };
 
-const push = async (title, desp) => {
-  try {
-    await pushWxPusher(title, desp);
-  } catch (e) {
-    logger.error(`wxPusher推送失败: ${e.message}`);
-  }
-  try {
-    await pushTelegramBot(title, desp);
-  } catch (e) {
-    logger.error(`TelegramBot推送失败: ${e.message}`);
-  }
+const push = (title, desp) => {
+  pushWxPusher(title, desp);
+  pushTelegramBot(title, desp);
 };
 
 let firstSpace = "  ";
