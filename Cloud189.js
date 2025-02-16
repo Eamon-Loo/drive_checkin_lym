@@ -23,20 +23,24 @@ const logger = log4js.getLogger();
 
 const mask = (s, start, end) => s.split("").fill("*", start, end).join("");
 
-// 重试请求的函数
-const retryRequest = async (fn, retries = 3, delay = 10000) => {
+// 重试请求的函数（新增 exitOnFail 参数）
+const retryRequest = async (fn, retries = 3, delay = 10000, exitOnFail = true) => {
   let attempt = 0;
   while (attempt < retries) {
     try {
-      return await fn(); // 尝试执行传入的函数
+      return await fn();
     } catch (error) {
       attempt++;
       if (attempt < retries) {
         logger.warn(`请求失败，正在重试... 第 ${attempt} 次，等待 ${delay / 1000} 秒`);
-        await new Promise((resolve) => setTimeout(resolve, delay)); // 延迟后重试
+        await new Promise((resolve) => setTimeout(resolve, delay));
       } else {
         logger.error(`请求重试 ${retries} 次后仍失败`);
-        throw error; // 如果重试次数用完，抛出错误
+        if (exitOnFail) {
+          logger.fatal("已达到最大重试次数，程序终止");
+          process.exit(1);
+        }
+        throw error;
       }
     }
   }
@@ -71,7 +75,7 @@ const doTask = async (cloudClient) => {
   getSpace = [`${firstSpace}签到家庭云获得(M)`];
   const { familyInfoResp } = await cloudClient.getFamilyList();
   if (familyInfoResp) {
-    const family = familyInfoResp.find((f) => f.familyId == familyID) || familyInfoResp[0];
+    const family = familyInfoResp.find((f) => f.familyId == familyID) || familyInfoResp;
     result.push(`${firstSpace}开始签到家庭云 ID: ${family.familyId}`);
     
     // 如果是第一个号且 private_only_first 为 true，使用单线程执行
@@ -108,25 +112,14 @@ const doTask = async (cloudClient) => {
   return result;
 };
 
-// 登录时使用重试机制
+// 登录时使用重试机制（移除 try-catch）
 const loginWithRetry = async (cloudClient) => {
-  try {
-    await retryRequest(() => cloudClient.login(), 3, 10000); // 使用 5 次重试，每次间隔 30 秒
-    //logger.info("登录成功");
-  } catch (e) {
-    logger.error(`登录失败：${e.message}`);
-    throw e; // 登录失败就跳过当前账号
-  }
+  await retryRequest(() => cloudClient.login(), 3, 10000); // 使用 3 次重试，每次间隔 10 秒
 };
 
-// 执行任务时使用重试机制
+// 执行任务时使用重试机制（移除 try-catch）
 const doTaskWithRetry = async (cloudClient) => {
-  try {
-    return await retryRequest(() => doTask(cloudClient), 3, 10000); // 使用 5 次重试，每次间隔 30 秒
-  } catch (e) {
-    logger.error(`执行任务失败：${e.message}`);
-    return []; // 返回空结果，跳过当前账号
-  }
+  return await retryRequest(() => doTask(cloudClient), 3, 10000); // 使用 3 次重试，每次间隔 10 秒
 };
 
 const pushTelegramBot = (title, desp) => {
@@ -176,7 +169,7 @@ const pushWxPusher = (title, desp) => {
         return;
       }
       const json = JSON.parse(res.text);
-      if (json.data[0].code !== 1000) {
+      if (json.data.code !== 1000) {
         logger.error(`wxPusher推送失败:${JSON.stringify(json)}`);
       } else {
         logger.info("wxPusher推送成功");
@@ -209,7 +202,7 @@ let i = 0;
 const main = async () => {
   accounts = accounts.split(/[\n ]/);
 
- let userName0, password0, familyCapacitySize, cloudCapacitySize;
+  let userName0, password0, familyCapacitySize, cloudCapacitySize;
 
   for (i = 0; i < accounts.length; i += 2) {
     let n = parseInt(i / 2 / 20);
@@ -219,29 +212,24 @@ const main = async () => {
 
     const userNameInfo = mask(userName, 3, 7);
 
-    try {
-      const cloudClient = new CloudClient(userName, password);
+    const cloudClient = new CloudClient(userName, password);
 
-      logger.log(`${i / 2 + 1}.账户 ${userNameInfo} 开始执行`);
-      await loginWithRetry(cloudClient);  // 使用重试机制登录
-    
-      const { cloudCapacityInfo: cloudCapacityInfo0, familyCapacityInfo: familyCapacityInfo0 } = await cloudClient.getUserSizeInfo();
-      const result = await doTaskWithRetry(cloudClient);  // 使用重试机制执行任务
+    logger.log(`${i / 2 + 1}.账户 ${userNameInfo} 开始执行`);
+    await loginWithRetry(cloudClient);  // 使用重试机制登录
+  
+    const { cloudCapacityInfo: cloudCapacityInfo0, familyCapacityInfo: familyCapacityInfo0 } = await cloudClient.getUserSizeInfo();
+    const result = await doTaskWithRetry(cloudClient);  // 使用重试机制执行任务
 
-      if (i / 2 % 20 == 0) {
-        userName0 = userName;
-        password0 = password;
-        familyCapacitySize = familyCapacityInfo0.totalSize;
-        cloudCapacitySize = cloudCapacityInfo0.totalSize;
-      }
-      const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
-      result.forEach((r) => logger.log(r));
-
-    } catch (e) {
-      logger.error(`账户 ${userNameInfo} 执行失败：${e.message}`);
-    } finally {
-      logger.log("");  // 确保每个账户执行结束后打印空行
+    if (i / 2 % 20 == 0) {
+      userName0 = userName;
+      password0 = password;
+      familyCapacitySize = familyCapacityInfo0.totalSize;
+      cloudCapacitySize = cloudCapacityInfo0.totalSize;
     }
+    const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
+    result.forEach((r) => logger.log(r));
+
+    logger.log("");  // 确保每个账户执行结束后打印空行
 
     if (i / 2 % 20 == 19 || i + 2 == accounts.length) {
       if (!userName0 || !password0) continue;
@@ -250,12 +238,12 @@ const main = async () => {
       const userNameInfo = mask(userName0, 3, 7);
       const { cloudCapacityInfo: finalCloudCapacityInfo, familyCapacityInfo: finalfamilyCapacityInfo } = await cloudClient.getUserSizeInfo();
       
-    const cloudCapacityChange = finalCloudCapacityInfo.totalSize - cloudCapacitySize;
+      const cloudCapacityChange = finalCloudCapacityInfo.totalSize - cloudCapacitySize;
       const capacityChange = finalfamilyCapacityInfo.totalSize - familyCapacitySize;
-      logger.log(`本次签到${userNameInfo} 个人获得 ${cloudCapacityChange / 1024 / 1024}M`); // 新增
+      logger.log(`本次签到${userNameInfo} 个人获得 ${cloudCapacityChange / 1024 / 1024}M`);
       logger.log(`本次签到${userNameInfo} 家庭获得 ${capacityChange / 1024 / 1024}M \n`);
       logger.log(`签到前${userNameInfo} 个人：${(cloudCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB`); 
-       logger.log(`签到前${userNameInfo} 家庭：${(familyCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB`);  
+      logger.log(`签到前${userNameInfo} 家庭：${(familyCapacitySize / 1024 / 1024 / 1024).toFixed(2)} GB`);  
       const { cloudCapacityInfo, familyCapacityInfo } = await cloudClient.getUserSizeInfo();
       const personalTotalCapacity = (cloudCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);  
       const familyTotalCapacity = (familyCapacityInfo.totalSize / 1024 / 1024 / 1024).toFixed(2);    
@@ -265,9 +253,13 @@ const main = async () => {
   }
 };
 
+// 顶层异常捕获
 (async () => {
   try {
     await main();
+  } catch (e) {
+    logger.fatal("程序异常终止:", e.message);
+    process.exit(1);
   } finally {
     logger.log("\n\n");
     const events = recording.replay();
