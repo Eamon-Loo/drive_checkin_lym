@@ -24,7 +24,7 @@ const logger = log4js.getLogger();
 const mask = (s, start, end) => s.split("").fill("*", start, end).join("");
 
 // 重试请求的函数
-const retryRequest = async (fn, retries = 5, delay = 10000) => {
+const retryRequest = async (fn, retries = 2, delay = 10000) => {
   let attempt = 0;
   while (attempt < retries) {
     try {
@@ -111,7 +111,7 @@ const doTask = async (cloudClient) => {
 // 登录时使用重试机制
 const loginWithRetry = async (cloudClient) => {
   try {
-    await retryRequest(() => cloudClient.login(), 5, 10000); // 使用 5 次重试，每次间隔 30 秒
+    await retryRequest(() => cloudClient.login(), 2, 10000); // 使用 5 次重试，每次间隔 30 秒
     //logger.info("登录成功");
   } catch (e) {
     logger.error(`登录失败：${e.message}`);
@@ -122,7 +122,7 @@ const loginWithRetry = async (cloudClient) => {
 // 执行任务时使用重试机制
 const doTaskWithRetry = async (cloudClient) => {
   try {
-    return await retryRequest(() => doTask(cloudClient), 5, 10000); // 使用 5 次重试，每次间隔 30 秒
+    return await retryRequest(() => doTask(cloudClient), 2, 10000); // 使用 5 次重试，每次间隔 30 秒
   } catch (e) {
     logger.error(`执行任务失败：${e.message}`);
     return []; // 返回空结果，跳过当前账号
@@ -272,7 +272,7 @@ const main = async () => {
     logger.log("\n\n");
     const events = recording.replay();
     const content = events.map((e) => `${e.data.join("")}`).join("  \n");
-    push("LYM天翼签到", content);
+    push("lym天翼签到", content);
     recording.erase();
   }
 })();
