@@ -42,101 +42,6 @@ const retryRequest = async (fn, retries = 5, delay = 10000) => {
   }
 };
 
-// 新增推送重试专用函数
-const withPushRetry = async (fn, retries = 2, delay = 1000) => {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await fn();
-    } catch (e) {
-      if (attempt < retries) {
-        logger.warn(`推送失败，第${attempt + 1}次重试...`);
-        await new Promise(r => setTimeout(r, delay));
-      } else {
-        throw e;
-      }
-    }
-  }
-};
-
-// 修改后的Telegram推送
-const pushTelegramBot = async (title, desp) => {
-  if (!(telegramBotToken && telegramBotId)) return;
-
-  const data = {
-    chat_id: telegramBotId,
-    text: `${title}\n\n${desp}`
-  };
-
-  try {
-    await withPushRetry(async () => {
-      return new Promise((resolve, reject) => {
-        superagent
-          .post(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`)
-          .send(data)
-          .timeout(5000)
-          .end((err, res) => {
-            if (err) return reject(err);
-            try {
-              const json = typeof res.text === 'string' ? JSON.parse(res.text) : res.body;
-              if (!json.ok) reject(new Error(json.description || 'Unknown error'));
-              else resolve(json);
-            } catch (e) {
-              reject(new Error('响应解析失败'));
-            }
-          });
-      });
-    }, 2, 1000);
-    logger.info("TelegramBot推送成功");
-  } catch (e) {
-    logger.error(`TelegramBot推送失败: ${e.message}`);
-  }
-};
-
-// 修改后的微信推送
-const pushWxPusher = async (title, desp) => {
-  if (!(WX_PUSHER_APP_TOKEN && WX_PUSHER_UID)) return;
-
-  const data = {
-    appToken: WX_PUSHER_APP_TOKEN,
-    contentType: 1,
-    summary: title,
-    content: desp,
-    uids: [WX_PUSHER_UID]
-  };
-
-  try {
-    await withPushRetry(async () => {
-      return new Promise((resolve, reject) => {
-        superagent
-          .post("https://wxpusher.zjiecode.com/api/send/message")
-          .send(data)
-          .timeout(15000)
-          .end((err, res) => {
-            if (err) return reject(err);
-            try {
-              const json = typeof res.text === 'string' ? JSON.parse(res.text) : res.body;
-              if (json.data.code !== 1000) reject(new Error(json.msg || 'Unknown error'));
-              else resolve(json);
-            } catch (e) {
-              reject(new Error('响应解析失败'));
-            }
-          });
-      });
-    }, 2, 1000);
-    logger.info("wxPusher推送成功");
-  } catch (e) {
-    logger.error(`wxPusher推送失败: ${e.message}`);
-  }
-};
-
-// 修改后的push函数
-const push = async (title, desp) => {
-  await Promise.allSettled([
-    pushWxPusher(title, desp),
-    pushTelegramBot(title, desp)
-  ]);
-};
-
 const doTask = async (cloudClient) => {
   const result = [];
   let getSpace = [`${firstSpace}签到个人云获得(M)`];
@@ -166,7 +71,7 @@ const doTask = async (cloudClient) => {
   getSpace = [`${firstSpace}签到家庭云获得(M)`];
   const { familyInfoResp } = await cloudClient.getFamilyList();
   if (familyInfoResp) {
-    const family = familyInfoResp.find((f) => f.familyId == familyID) || familyInfoResp;
+    const family = familyInfoResp.find((f) => f.familyId == familyID) || familyInfoResp[0];
     result.push(`${firstSpace}开始签到家庭云 ID: ${family.familyId}`);
     
     // 如果是第一个号且 private_only_first 为 true，使用单线程执行
@@ -222,6 +127,66 @@ const doTaskWithRetry = async (cloudClient) => {
     logger.error(`执行任务失败：${e.message}`);
     return []; // 返回空结果，跳过当前账号
   }
+};
+
+const pushTelegramBot = (title, desp) => {
+  if (!(telegramBotToken && telegramBotId)) {
+    return;
+  }
+  const data = {
+    chat_id: telegramBotId,
+    text: `${title}\n\n${desp}`,
+  };
+  superagent
+    .post(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`)
+    .send(data)
+    .timeout(3000)
+    .end((err, res) => {
+      if (err) {
+        logger.error(`TelegramBot推送失败:${JSON.stringify(err)}`);
+        return;
+      }
+      const json = JSON.parse(res.text);
+      if (!json.ok) {
+        logger.error(`TelegramBot推送失败:${JSON.stringify(json)}`);
+      } else {
+        logger.info("TelegramBot推送成功");
+      }
+    });
+};
+
+const pushWxPusher = (title, desp) => {
+  if (!(WX_PUSHER_APP_TOKEN && WX_PUSHER_UID)) {
+    return;
+  }
+  const data = {
+    appToken: WX_PUSHER_APP_TOKEN,
+    contentType: 1,
+    summary: title,
+    content: desp,
+    uids: [WX_PUSHER_UID],
+  };
+  superagent
+    .post("https://wxpusher.zjiecode.com/api/send/message")
+    .send(data)
+    .timeout(30000)
+    .end((err, res) => {
+      if (err) {
+        logger.error(`wxPusher推送失败:${JSON.stringify(err)}`);
+        return;
+      }
+      const json = JSON.parse(res.text);
+      if (json.data[0].code !== 1000) {
+        logger.error(`wxPusher推送失败:${JSON.stringify(json)}`);
+      } else {
+        logger.info("wxPusher推送成功");
+      }
+    });
+};
+
+const push = (title, desp) => {
+  pushWxPusher(title, desp);
+  pushTelegramBot(title, desp);
 };
 
 let firstSpace = "  ";
@@ -307,7 +272,7 @@ const main = async () => {
     logger.log("\n\n");
     const events = recording.replay();
     const content = events.map((e) => `${e.data.join("")}`).join("  \n");
-    await push("lym天翼签到", content);  // 修改为await
+    push("LYM天翼签到", content);
     recording.erase();
   }
 })();
